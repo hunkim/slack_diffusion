@@ -1,0 +1,12 @@
+diffusers 
+transformers 
+scipy
+python-dotenv
+slack_sdk
+python-dotenv
+fastapi
+uvicorn[standard]
+slackers
+ecs-logging
+Pillow
+git+https://github.com/hunkim/streamlit-google-oauth
