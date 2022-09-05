@@ -20,7 +20,7 @@ from slackers.hooks import events
 import ecs_logging
 
 import diffusion as d
-
+import papago as p
 
 # Set SLACK_SIGNING_SECRET
 load_dotenv()
@@ -59,30 +59,51 @@ def is_from_bot(event):
 
     return event["user"] == BOT_USER_ID
 
+def _get_tmp_filename(event, prefix="diffusion_", suffix=".png"):
+    return f"{tempfile.gettempdir()}/{prefix}{event['channel']}_{event['ts']}{suffix}"
 
 def post_message(event):
     start_time = time.time()
-    prompt = event['text']
+    prompt = event["text"]
+
+    # Remove "<@ ... >" from prompt
+    prompt = " ".join(
+        filter(lambda x: not x.startswith("<@") or not x.endswith(">"), prompt.split())
+    )
+
+    wait_text = "working on it..."
+    if p.is_hangul(prompt):
+        wait_text = f"Translate '{prompt}' to "
+
+        prompt = p._translate(prompt, "ko", "en")
+        wait_text += f"'{prompt}'."
+
+    post_result = client.chat_postMessage(
+        channel=event["channel"],
+        thread_ts=event.get("thread_ts", event["ts"]),
+        text=wait_text,
+    )
+
     image = d.diffusion(prompt)
     took = time.time() - start_time
 
-    tf = tempfile.NamedTemporaryFile(prefix="diffusion", suffix=".png")
-    image.save(tf.name)
-   
+    tf_name = _get_tmp_filename(event=event)
+    image.save(tf_name)
+
     result = client.files_upload(
         channels=event["channel"],
         thread_ts=event.get(
             "thread_ts", event["ts"]
         ),  # get event['thread_ts'] if the key is present, otherise use event['ts']
-        initial_comment=f"Prompt: {prompt}",
-        file=tf.name,
-        filetype="jpg",
-        title="annotated image",
+        initial_comment=f"Prompt: {prompt} in {took:.2f} seconds",
+        file=tf_name,
+        filetype="png",
+        title="generated image",
     )
     # Log the result
     log.info(result)
 
-    os.remove(tf.name)
+    os.remove(tf_name)
 
     # ECS logging
     log.info(
@@ -122,7 +143,7 @@ def handle_event(payload):
         return
 
     post_message(event)
- 
+
 
 @app.get("/")
 async def main():
